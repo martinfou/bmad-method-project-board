@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BMAD Method Project Board</title>
+    <title>BMad Project Board</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -101,11 +101,15 @@
                 <i class="fa-solid fa-layer-group text-slate-900"></i>
             </div>
             <div>
-                <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                    BMAD Method Project Board
+                <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2 flex-wrap">
+                    BMad Project Board
                     <span id="health-badge" class="text-xs px-2.5 py-0.5 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm flex items-center gap-1.5">
                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                         HEALTHY
+                    </span>
+                    <span id="active-story-badge" class="hidden text-xs px-2.5 py-0.5 rounded-full font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20 shadow-sm flex items-center gap-1.5">
+                        <i class="fa-solid fa-thumbtack text-rose-400"></i>
+                        Active: <span id="active-story-id" class="font-bold"></span>
                     </span>
                 </h1>
                 <p id="project-meta" class="text-xs text-slate-400 font-mono">Project: trading-bridge | Updated: --</p>

@@ -65,6 +65,27 @@ function updateHUD() {
     document.getElementById('project-meta').textContent = 
         `Project: ${meta.project || 'trading-bridge'} | Key: ${meta.project_key || 'NOKEY'} | Updated: ${meta.last_updated || '--'}`;
         
+    // Update active story badge in HUD
+    const activeBadge = document.getElementById('active-story-badge');
+    const activeStoryIdSpan = document.getElementById('active-story-id');
+    if (activeStoryKey) {
+        const activeStory = boardData.stories.find(s => s.key === activeStoryKey);
+        if (activeStory) {
+            let prefix = activeStoryKey;
+            const match = activeStoryKey.match(/^(\d+-\d+)/);
+            if (match) {
+                prefix = match[1];
+            }
+            activeStoryIdSpan.textContent = prefix;
+            activeBadge.setAttribute('title', activeStory.title);
+            activeBadge.classList.remove('hidden');
+        } else {
+            activeBadge.classList.add('hidden');
+        }
+    } else {
+        activeBadge.classList.add('hidden');
+    }
+        
     // Update column counters
     updateColumnCounts();
 }
@@ -164,9 +185,15 @@ function toggleEpicPane() {
 
 function renderBoard() {
     const statuses = ['backlog', 'ready-for-dev', 'in-progress', 'blocked', 'review', 'done'];
+    
+    // Save scroll positions of columns before rendering
+    const scrollPositions = {};
     statuses.forEach(status => {
         const col = document.getElementById(`col-${status}`);
-        if (col) col.innerHTML = '';
+        if (col) {
+            scrollPositions[status] = col.scrollTop;
+            col.innerHTML = '';
+        }
     });
     
     const filteredStories = boardData.stories.filter(s => !selectedEpicKey || s.epic === selectedEpicKey);
@@ -230,6 +257,14 @@ function renderBoard() {
                 </div>
             </div>
         `;
+    });
+    
+    // Restore scroll positions of columns after rendering
+    statuses.forEach(status => {
+        const col = document.getElementById(`col-${status}`);
+        if (col && scrollPositions[status] !== undefined) {
+            col.scrollTop = scrollPositions[status];
+        }
     });
     
     updateColumnCounts();
@@ -301,7 +336,6 @@ document.addEventListener('dragend', (e) => {
 
 function selectStory(storyKey) {
     selectedStoryId = storyKey;
-    selectedEpicKey = null; // deselect epic filter but keep board
     
     // Highlight the card
     renderBoard();
@@ -313,7 +347,6 @@ function selectStory(storyKey) {
 
 function closeTaskPane() {
     selectedStoryId = null;
-    selectedEpicKey = null;
     document.getElementById('task-pane').classList.add('translate-x-full');
     renderBoard();
 }
@@ -606,6 +639,79 @@ async function renderTaskInspector(storyKey) {
         const tasksDone = storyDetails.tasks ? storyDetails.tasks.filter(t => t.done).length : 0;
         const pct = tasksTot > 0 ? Math.round(tasksDone / tasksTot * 100) : 0;
         
+        let commandBoxHtml = '';
+        if (story.status === 'review') {
+            commandBoxHtml = `
+                <!-- Antigravity CLI Command Box (Review) -->
+                <div class="mt-2 space-y-1.5 p-2.5 bg-slate-900/60 rounded-xl border border-white/5">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block"><i class="fa-solid fa-terminal text-dracula-purple"></i> Run in Antigravity (Code Review)</span>
+                    <div class="p-2 bg-slate-950 rounded-lg border border-white/5 font-mono text-[10px] text-slate-300 relative group flex items-center justify-between">
+                        <span class="truncate pr-8 select-all"><span class="text-dracula-purple select-none">$</span> run code review</span>
+                        <button onclick="navigator.clipboard.writeText('run code review'); showCopyToast(this)" class="absolute top-1.5 right-1.5 opacity-60 group-hover:opacity-100 hover:text-white transition text-slate-400" title="Copy command">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else if (story.status === 'done') {
+            commandBoxHtml = `
+                <!-- Antigravity CLI Command Box (Done) -->
+                <div class="mt-2 space-y-1.5 p-2.5 bg-slate-900/60 rounded-xl border border-white/5">
+                    <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block"><i class="fa-solid fa-circle-check text-emerald-400"></i> Story Completed</span>
+                    <div class="p-2 bg-slate-950/40 rounded-lg border border-emerald-500/10 font-mono text-[10px] text-emerald-400/80 leading-normal block">
+                        🎉 All tasks completed and verified!
+                    </div>
+                </div>
+            `;
+        } else if (!story.file_exists) {
+            commandBoxHtml = `
+                <!-- Antigravity CLI Command Box (Scaffold) -->
+                <div class="mt-2 space-y-1.5 p-2.5 bg-slate-900/60 rounded-xl border border-white/5">
+                    <span class="text-[10px] font-bold text-amber-400 uppercase tracking-wider block"><i class="fa-solid fa-terminal text-amber-400"></i> Run in Antigravity (Scaffold Spec)</span>
+                    <div class="p-2 bg-slate-950 rounded-lg border border-amber-500/10 font-mono text-[10px] text-amber-300 relative group flex items-center justify-between">
+                        <span class="truncate pr-8 select-all"><span class="text-amber-400 select-none">$</span> create story ${storyKey}</span>
+                        <button onclick="navigator.clipboard.writeText('create story ${storyKey}'); showCopyToast(this)" class="absolute top-1.5 right-1.5 opacity-60 group-hover:opacity-100 hover:text-amber-200 transition text-amber-400" title="Copy scaffold command">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                    <span class="text-[9px] text-amber-400/80 leading-normal block">💡 The specification file is missing. Run this command first to scaffold it!</span>
+                </div>
+            `;
+        } else {
+            let statusLabel = 'Run in Antigravity';
+            let statusIcon = 'text-dracula-purple';
+            if (story.status === 'blocked') {
+                statusLabel = 'Run in Antigravity (Resolve Block)';
+                statusIcon = 'text-rose-400';
+            } else if (story.status === 'in-progress') {
+                statusLabel = 'Run in Antigravity (Resume Dev)';
+            } else if (story.status === 'ready-for-dev') {
+                statusLabel = 'Run in Antigravity (Start Dev)';
+            }
+            
+            commandBoxHtml = `
+                <!-- Antigravity CLI Command Box (Development) -->
+                <div class="mt-2 space-y-1.5 p-2.5 bg-slate-900/60 rounded-xl border border-white/5">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block"><i class="fa-solid fa-terminal ${statusIcon}"></i> ${statusLabel}</span>
+                    <div class="p-2 bg-slate-950 rounded-lg border border-white/5 font-mono text-[10px] text-slate-300 relative group flex items-center justify-between">
+                        <span class="truncate pr-8 select-all"><span class="text-dracula-purple select-none">$</span> dev this story _bmad-output/implementation-artifacts/${storyKey}.md</span>
+                        <button onclick="navigator.clipboard.writeText('dev this story _bmad-output/implementation-artifacts/${storyKey}.md'); showCopyToast(this)" class="absolute top-1.5 right-1.5 opacity-60 group-hover:opacity-100 hover:text-white transition text-slate-400" title="Copy command">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                    ${isPinned ? `
+                    <div class="p-2 bg-rose-950/20 rounded-lg border border-rose-500/10 font-mono text-[10px] text-rose-300 relative group flex items-center justify-between">
+                        <span class="truncate pr-8 select-all"><span class="text-rose-400 select-none">$</span> dev this story</span>
+                        <button onclick="navigator.clipboard.writeText('dev this story'); showCopyToast(this)" class="absolute top-1.5 right-1.5 opacity-60 group-hover:opacity-100 hover:text-rose-200 transition text-rose-400" title="Copy shorthand command">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                    <span class="text-[9px] text-rose-400/80 leading-normal block">💡 This story is pinned as active. You can run the shorthand command!</span>
+                    ` : ''}
+                </div>
+            `;
+        }
+        
         let headerHtml = `
             <div class="space-y-3 pb-3 border-b border-white/5">
                 <div class="flex justify-between items-center">
@@ -623,25 +729,7 @@ async function renderTaskInspector(storyKey) {
                     <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-xs font-mono uppercase font-bold">${story.epic || ''}</span>
                 </div>
 
-                <!-- Antigravity CLI Command Box -->
-                <div class="mt-2 space-y-1.5 p-2.5 bg-slate-900/60 rounded-xl border border-white/5">
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block"><i class="fa-solid fa-terminal text-dracula-purple"></i> Run in Antigravity</span>
-                    <div class="p-2 bg-slate-950 rounded-lg border border-white/5 font-mono text-[10px] text-slate-300 relative group flex items-center justify-between">
-                        <span class="truncate pr-8 select-all"><span class="text-dracula-purple select-none">$</span> dev this story _bmad-output/implementation-artifacts/${storyKey}.md</span>
-                        <button onclick="navigator.clipboard.writeText('dev this story _bmad-output/implementation-artifacts/${storyKey}.md'); showCopyToast(this)" class="absolute top-1.5 right-1.5 opacity-60 group-hover:opacity-100 hover:text-white transition text-slate-400" title="Copy command">
-                            <i class="fa-regular fa-copy"></i>
-                        </button>
-                    </div>
-                    ${isPinned ? `
-                    <div class="p-2 bg-rose-950/20 rounded-lg border border-rose-500/10 font-mono text-[10px] text-rose-300 relative group flex items-center justify-between">
-                        <span class="truncate pr-8 select-all"><span class="text-rose-400 select-none">$</span> dev this story</span>
-                        <button onclick="navigator.clipboard.writeText('dev this story'); showCopyToast(this)" class="absolute top-1.5 right-1.5 opacity-60 group-hover:opacity-100 hover:text-rose-200 transition text-rose-400" title="Copy shorthand command">
-                            <i class="fa-regular fa-copy"></i>
-                        </button>
-                    </div>
-                    <span class="text-[9px] text-rose-400/80 leading-normal block">💡 This story is pinned as active. You can run the shorthand command!</span>
-                    ` : ''}
-                </div>
+                ${commandBoxHtml}
                 
                 <!-- Persistent Progress Header -->
                 <div class="space-y-1 pt-1">
