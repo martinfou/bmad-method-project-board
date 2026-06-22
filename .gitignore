@@ -1,2 +1,10 @@
 __pycache__/
 *.pyc
+
+# BMAD Local Agent configurations
+.agent/
+.agents/
+
+# Personal config overrides
+*.user.toml
+
