@@ -138,7 +138,7 @@
     </header>
 
     <!-- Main Tri-Pane Workspace -->
-    <main class="flex-1 flex overflow-hidden">
+    <main class="flex-1 flex overflow-hidden relative">
         
         <!-- Left Pane: Epic Roadmap -->
         <aside id="epic-pane" class="w-80 border-r border-white/5 bg-slate-950 flex flex-col transition-all duration-300 relative shrink-0">
@@ -162,10 +162,10 @@
         <!-- Center Pane: Kanban Board -->
         <section class="flex-1 flex flex-col bg-slate-900/30 overflow-x-auto min-w-0">
             <!-- Kanban Columns Container -->
-            <div class="flex-1 p-6 flex gap-4 min-h-0 overflow-y-auto">
+            <div class="flex-1 p-6 flex gap-4 min-h-0 overflow-x-auto overflow-y-hidden">
                 
                 <!-- Backlog Column -->
-                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                <div class="flex-1 min-w-[280px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
                     <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
                         <div class="flex items-center gap-2">
                             <span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
@@ -179,7 +179,7 @@
                 </div>
 
                 <!-- Ready for Dev Column -->
-                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                <div class="flex-1 min-w-[280px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
                     <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
                         <div class="flex items-center gap-2">
                             <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
@@ -193,7 +193,7 @@
                 </div>
 
                 <!-- In Progress Column -->
-                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                <div class="flex-1 min-w-[280px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
                     <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
                         <div class="flex items-center gap-2">
                             <span class="w-2.5 h-2.5 rounded-full bg-orange-400"></span>
@@ -207,7 +207,7 @@
                 </div>
 
                 <!-- Blocked Column -->
-                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-amber-500/20 blocked-stripe">
+                <div class="flex-1 min-w-[280px] flex flex-col bg-slate-950/40 rounded-xl border border-amber-500/20 blocked-stripe">
                     <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
                         <div class="flex items-center gap-2">
                             <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
@@ -221,7 +221,7 @@
                 </div>
 
                 <!-- Review Column -->
-                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                <div class="flex-1 min-w-[280px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
                     <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
                         <div class="flex items-center gap-2">
                             <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
@@ -235,7 +235,7 @@
                 </div>
 
                 <!-- Done Column -->
-                <div class="flex-1 min-w-[280px] max-w-[340px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
+                <div class="flex-1 min-w-[280px] flex flex-col bg-slate-950/40 rounded-xl border border-white/5">
                     <div class="p-3 border-b border-white/5 flex justify-between items-center bg-slate-950/20">
                         <div class="flex items-center gap-2">
                             <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
@@ -252,7 +252,7 @@
         </section>
 
         <!-- Right Pane: Task Inspector -->
-        <aside id="task-pane" class="w-96 border-l border-white/5 bg-slate-950 flex flex-col translate-x-full transition-transform duration-300 relative shrink-0">
+        <aside id="task-pane" class="w-96 border-l border-white/5 bg-slate-950 flex flex-col translate-x-full transition-transform duration-300 absolute right-0 top-0 h-full z-30 shadow-2xl">
             <div class="p-4 border-b border-white/5 flex justify-between items-center bg-slate-900/50">
                 <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                     <i class="fa-solid fa-list-check"></i> Task Inspector
