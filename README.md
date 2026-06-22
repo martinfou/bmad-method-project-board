@@ -1,6 +1,6 @@
-# BMad Project Board
+# BMAD Method Project Board
 
-A zero-dependency, lightweight Kanban board and task inspector to manage BMad project sprints and epic specifications.
+A zero-dependency, lightweight Kanban board and task inspector to manage BMAD Method project sprints and epic specifications.
 
 ## Features
 

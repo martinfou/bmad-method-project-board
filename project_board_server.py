@@ -647,7 +647,7 @@ def main():
     global YAML_PATH, ARTIFACTS_DIR, PLANNING_DIR
     import argparse
     
-    parser = argparse.ArgumentParser(description="BMad Project Board Server")
+    parser = argparse.ArgumentParser(description="BMAD Method Project Board Server")
     parser.add_argument("--project-root", default=os.getcwd(), help="Path to project workspace root")
     parser.add_argument("--port", type=int, default=PORT, help="Port to run server on")
     args = parser.parse_args()
@@ -658,11 +658,11 @@ def main():
     PLANNING_DIR = project_root / "_bmad-output" / "planning-artifacts"
     
     server = HTTPServer(("localhost", args.port), ProjectBoardRequestHandler)
-    print(f"BMad Project Board server running on http://localhost:{args.port} (Workspace: {project_root})")
+    print(f"BMAD Method Project Board server running on http://localhost:{args.port} (Workspace: {project_root})")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping BMad Project Board server.")
+        print("\nStopping BMAD Method Project Board server.")
         server.server_close()
 
 if __name__ == "__main__":
