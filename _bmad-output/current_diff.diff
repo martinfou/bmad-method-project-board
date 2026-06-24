@@ -1,0 +1,502 @@
+diff --git a/SKILL.md b/SKILL.md
+new file mode 100644
+index 0000000..38ef6c6
+--- /dev/null
++++ b/SKILL.md
+@@ -0,0 +1,22 @@
++---
++name: bmad-sprint-status-ui
++description: Generate a rich visual Markdown dashboard or launch the interactive, web-based BMad local project board.
++---
++
++# BMad Sprint Status UI
++
++Run the local server to view the project board:
++
++```bash
++python3 .agents/skills/bmad-sprint-status-ui/project_board_server.py
++```
++
++## Description
++This skill provides a full UI dashboard to view and manage Epics and Stories using the BMad Method.
++
++## Agent Instructions (Launch Intent)
++When the user asks to "open project board", "start dashboard", or "view board":
++1. Execute the server script (`.agents/skills/bmad-sprint-status-ui/project_board_server.py`) as a background task. The server automatically scans for an open port starting at `8010` and handles collisions gracefully.
++2. Read the console output from the background task to identify which port the server actually bound to (e.g., "running on http://localhost:8010").
++3. Respond to the user with a clickable markdown link to that specific URL (e.g. `[Open Dashboard](http://localhost:8010)`).
++4. Do not attempt to use terminal commands to open the browser unless explicitly requested. Provide the URL and allow the user to click it.
+diff --git a/install.py b/install.py
+new file mode 100755
+index 0000000..913e8ba
+--- /dev/null
++++ b/install.py
+@@ -0,0 +1,88 @@
++#!/usr/bin/env python3
++import os
++import sys
++import shutil
++from pathlib import Path
++
++def main():
++    if sys.version_info < (3, 6):
++        print("Error: This script requires Python 3.6 or higher.", file=sys.stderr)
++        sys.exit(1)
++        
++    if len(sys.argv) < 2:
++        print("Usage: python3 install.py <target_project_path>")
++        sys.exit(1)
++        
++    target_path = Path(sys.argv[1]).resolve()
++    if not target_path.exists() or not target_path.is_dir():
++        print(f"Error: Target path '{target_path}' is not a valid directory.", file=sys.stderr)
++        sys.exit(1)
++        
++    source_dir = Path(__file__).resolve().parent
++    
++    if not (source_dir / "project_board_server.py").exists() or not (source_dir / "project_board_static").is_dir():
++        print("Error: Missing source files (project_board_server.py or project_board_static/).", file=sys.stderr)
++        sys.exit(1)
++        
++    skill_dir = target_path / ".agents" / "skills" / "bmad-sprint-status-ui"
++    
++    print(f"Installing bmad-sprint-status-ui to {skill_dir}...")
++    
++    def safe_copy(src, dst):
++        if dst.exists():
++            backup = dst.with_name(dst.name + ".bak")
++            shutil.copy2(dst, backup)
++            print(f"Backed up {dst.name} to {backup.name}")
++        shutil.copy2(src, dst)
++        
++    try:
++        skill_dir.mkdir(parents=True, exist_ok=True)
++        
++        # Copy server safely
++        safe_copy(source_dir / "project_board_server.py", skill_dir / "project_board_server.py")
++        
++        # Copy static assets safely
++        static_dest = skill_dir / "project_board_static"
++        static_dest.mkdir(exist_ok=True)
++        source_static = source_dir / "project_board_static"
++        for item in source_static.iterdir():
++            if item.is_file():
++                safe_copy(item, static_dest / item.name)
++        
++        # Create SKILL.md safely
++        source_skill_md = source_dir / "SKILL.md"
++        dest_skill_md = skill_dir / "SKILL.md"
++        if source_skill_md.exists():
++            safe_copy(source_skill_md, dest_skill_md)
++        elif not dest_skill_md.exists():
++            with open(skill_dir / "SKILL.md", "w", encoding="utf-8") as f:
++                f.write("""---
++name: bmad-sprint-status-ui
++description: Generate a rich visual Markdown dashboard or launch the interactive, web-based BMad local project board.
++---
++
++# BMad Sprint Status UI
++
++Run the local server to view the project board:
++```bash
++python3 .agents/skills/bmad-sprint-status-ui/project_board_server.py
++```
++
++## Description
++This skill provides a full UI dashboard to view and manage Epics and Stories using the BMad Method.
++
++## Agent Instructions (Launch Intent)
++When the user asks to "open project board", "start dashboard", or "view board":
++1. Execute the server script (`.agents/skills/bmad-sprint-status-ui/project_board_server.py`) as a background task. The server automatically scans for an open port starting at `8010` and handles collisions gracefully.
++2. Read the console output from the background task to identify which port the server actually bound to (e.g., "running on http://localhost:8010").
++3. Respond to the user with a clickable markdown link to that specific URL (e.g. `[Open Dashboard](http://localhost:8010)`).
++4. Do not attempt to use terminal commands to open the browser unless explicitly requested. Provide the URL and allow the user to click it.
++""")
++                
++        print("Installation complete!")
++    except Exception as e:
++        print(f"Error during installation: {e}", file=sys.stderr)
++        sys.exit(1)
++
++if __name__ == "__main__":
++    main()
+diff --git a/project_board_server.py b/project_board_server.py
+index 336dee5..d745739 100644
+--- a/project_board_server.py
++++ b/project_board_server.py
+@@ -12,6 +12,7 @@ PORT = 8010
+ YAML_PATH = None
+ ARTIFACTS_DIR = None
+ PLANNING_DIR = None
++PROJECT_ROOT = None
+ STATIC_DIR = Path(__file__).resolve().parent / "project_board_static"
+ 
+ ALLOWED_TRANSITIONS = {
+@@ -35,6 +36,137 @@ def write_last_active_story(story_key):
+         except Exception as e:
+             sys.stderr.write(f"Error writing last active story trace: {e}\n")
+ 
++def find_project_root(override_path=None):
++    if override_path:
++        p = Path(override_path).resolve()
++        if not p.exists():
++            sys.stderr.write(f"Error: Specified project root '{p}' does not exist.\n")
++            sys.exit(1)
++        if not p.is_dir():
++            sys.stderr.write(f"Error: Specified project root '{p}' is not a directory.\n")
++            sys.exit(1)
++        return p
++
++    # 1. Start check from directory of project_board_server.py
++    script_dir = Path(__file__).resolve().parent
++    try:
++        cwd = Path(os.getcwd()).resolve()
++    except Exception:
++        cwd = script_dir
++    
++    # Helper to check if a directory has any of the markers with correct type checks
++    def has_marker(p):
++        try:
++            if (p / ".agents").is_dir():
++                return True
++            if (p / "_bmad-output").is_dir():
++                return True
++            if (p / "project-context.md").is_file():
++                return True
++        except PermissionError:
++            pass
++        return False
++        
++    # Helper to walk up from a path
++    def walk_up_find(start_path):
++        curr = start_path
++        while True:
++            if has_marker(curr):
++                return curr
++            parent = curr.parent
++            if parent == curr: # Reached filesystem root
++                break
++            curr = parent
++        return None
++
++    # Check from script dir first
++    root = walk_up_find(script_dir)
++    if root:
++        return root
++        
++    # Check from CWD next
++    if cwd != script_dir:
++        root = walk_up_find(cwd)
++        if root:
++            return root
++        
++    # Fallback to CWD
++    return cwd
++
++def load_project_config(project_root):
++    config_paths = [
++        project_root / "_bmad" / "bmm" / "config.yaml",
++        project_root / ".bmad" / "config.yaml"
++    ]
++    
++    config = {}
++    for path in config_paths:
++        if path.exists():
++            try:
++                with open(path, "r", encoding="utf-8") as f:
++                    for line in f:
++                        line = line.strip()
++                        if not line or line.startswith("#"):
++                            continue
++                        if ":" in line:
++                            key, val = line.split(":", 1)
++                            config[key.strip()] = val.strip().strip('"').strip("'")
++                break
++            except Exception as e:
++                sys.stderr.write(f"Error reading config {path}: {e}\n")
++    return config
++
++def get_prd_content():
++    global PLANNING_DIR, PROJECT_ROOT
++    if not PROJECT_ROOT:
++        return "PRD Not Configured", "Project root not resolved."
++        
++    # Standard check directories
++    possible_paths = []
++    if PLANNING_DIR:
++        possible_paths.extend([
++            PLANNING_DIR / "prd.md",
++            PLANNING_DIR / "product-brief.md",
++        ])
++    possible_paths.append(PROJECT_ROOT / "design-artifacts" / "A-Product-Brief" / "project-brief.md")
++    
++    for path in possible_paths:
++        if path.exists():
++            try:
++                with open(path, "r", encoding="utf-8") as f:
++                    return path.name, f.read()
++            except Exception as e:
++                sys.stderr.write(f"Error reading PRD path {path}: {e}\n")
++                
++    # Fallback to wildcard search in planning artifacts
++    if PLANNING_DIR and PLANNING_DIR.exists():
++        try:
++            for p in sorted(PLANNING_DIR.glob("*prd*.md")):
++                with open(p, "r", encoding="utf-8") as f:
++                    return p.name, f.read()
++            for p in sorted(PLANNING_DIR.glob("*brief*.md")):
++                with open(p, "r", encoding="utf-8") as f:
++                    return p.name, f.read()
++        except PermissionError:
++            pass
++        except Exception as e:
++            sys.stderr.write(f"Error searching PRD files: {e}\n")
++            
++    # Fallback to wildcard search in design-artifacts/A-Product-Brief
++    brief_dir = PROJECT_ROOT / "design-artifacts" / "A-Product-Brief"
++    if brief_dir.exists():
++        try:
++            for p in sorted(brief_dir.glob("*.md")):
++                if "brief" in p.name.lower() or "prd" in p.name.lower():
++                    with open(p, "r", encoding="utf-8") as f:
++                        return p.name, f.read()
++        except PermissionError:
++            pass
++        except Exception as e:
++            sys.stderr.write(f"Error searching design brief files: {e}\n")
++        
++    return "PRD Not Found", "No PRD (`prd.md`) or Product Brief (`project-brief.md`) was found in the planning or design directories."
++
+ def normalize_to_tokens(text):
+     if not text:
+         return []
+@@ -457,7 +589,11 @@ class ProjectBoardRequestHandler(BaseHTTPRequestHandler):
+         
+         # API Endpoints
+         if path == "/api/board":
+-            metadata, dev_status = parse_sprint_status()
++            try:
++                metadata, dev_status = parse_sprint_status()
++            except Exception as e:
++                sys.stderr.write(f"Error parsing sprint status: {e}\n")
++                metadata, dev_status = {}, {}
+             
+             epics = {}
+             stories = []
+@@ -545,6 +681,14 @@ class ProjectBoardRequestHandler(BaseHTTPRequestHandler):
+                         pass
+             self.send_json({"active_story_key": active_key})
+             return
++
++        elif path == "/api/prd":
++            filename, content = get_prd_content()
++            self.send_json({
++                "filename": filename,
++                "content": content
++            })
++            return
+             
+         # Serve Static Files
+         if path == "/" or path == "":
+@@ -643,22 +787,94 @@ class ProjectBoardRequestHandler(BaseHTTPRequestHandler):
+             self.send_response(404)
+             self.end_headers()
+ 
++def seed_templates():
++    if not YAML_PATH.exists():
++        try:
++            ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
++            with open(YAML_PATH, "w", encoding="utf-8") as f:
++                f.write("""project: "My BMAD Project"
++project_key: "BMAD"
++sprint_name: "Sprint 1: Foundation"
++sprint_goal: "Set up the core architecture and basic authentication"
++start_date: "2024-01-01"
++end_date: "2024-01-14"
++last_updated: "2024-01-01T00:00:00Z"
++
++development_status:
++  epic-1: in-progress
++  epic-2: backlog
++  
++  1-1: done
++  1-2: in-progress
++  1-3: ready-for-dev
++  
++  2-1: backlog
++""")
++            print("Seeded sprint-status.yaml template.")
++        except Exception as e:
++            sys.stderr.write(f"Error seeding sprint-status.yaml: {e}\n")
++            
++    epics_path = PLANNING_DIR / "epics.md"
++    if not epics_path.exists():
++        try:
++            PLANNING_DIR.mkdir(parents=True, exist_ok=True)
++            with open(epics_path, "w", encoding="utf-8") as f:
++                f.write("""# Project Epics
++
++## Epic 1: Scaffold Initial Architecture
++Set up the core boilerplate, file structure, and CI pipelines for the project.
++
++## Epic 2: Core User Authentication
++Implement login, registration, and password recovery.
++""")
++            print("Seeded epics.md template.")
++        except Exception as e:
++            sys.stderr.write(f"Error seeding epics.md: {e}\n")
++
+ def main():
+-    global YAML_PATH, ARTIFACTS_DIR, PLANNING_DIR
++    global YAML_PATH, ARTIFACTS_DIR, PLANNING_DIR, PROJECT_ROOT
+     import argparse
+     
+     parser = argparse.ArgumentParser(description="BMAD Method Project Board Server")
+-    parser.add_argument("--project-root", default=os.getcwd(), help="Path to project workspace root")
++    parser.add_argument("--project-root", default=None, help="Path to project workspace root")
+     parser.add_argument("--port", type=int, default=PORT, help="Port to run server on")
+     args = parser.parse_args()
+     
+-    project_root = Path(args.project_root).resolve()
+-    YAML_PATH = project_root / "_bmad-output" / "implementation-artifacts" / "sprint-status.yaml"
+-    ARTIFACTS_DIR = project_root / "_bmad-output" / "implementation-artifacts"
+-    PLANNING_DIR = project_root / "_bmad-output" / "planning-artifacts"
++    if not (0 <= args.port <= 65535):
++        parser.error("Port must be between 0 and 65535")
++        
++    project_root = find_project_root(args.project_root)
++        
++    PROJECT_ROOT = project_root
++    
++    config = load_project_config(project_root)
++    impl_dir = config.get("implementation_artifacts_dir") or config.get("story_location") or "_bmad-output/implementation-artifacts"
++    plan_dir = config.get("planning_artifacts_dir") or "_bmad-output/planning-artifacts"
++    
++    ARTIFACTS_DIR = project_root / impl_dir
++    PLANNING_DIR = project_root / plan_dir
++    YAML_PATH = ARTIFACTS_DIR / "sprint-status.yaml"
+     
+-    server = HTTPServer(("localhost", args.port), ProjectBoardRequestHandler)
+-    print(f"BMAD Method Project Board server running on http://localhost:{args.port} (Workspace: {project_root})")
++    seed_templates()
++    
++    port = args.port
++    server = None
++    while port < 65535:
++        try:
++            server = HTTPServer(("localhost", port), ProjectBoardRequestHandler)
++            break
++        except OSError as e:
++            # Catch "Address already in use" (98 on Linux, 48 on macOS)
++            if e.errno == 98 or e.errno == 48:
++                port += 1
++            else:
++                raise
++                
++    if not server:
++        sys.stderr.write("Could not bind to any port.\n")
++        sys.exit(1)
++        
++    print(f"BMAD Method Project Board server running on http://localhost:{port} (Workspace: {project_root})")
+     try:
+         server.serve_forever()
+     except KeyboardInterrupt:
+diff --git a/test_project_board_server.py b/test_project_board_server.py
+new file mode 100644
+index 0000000..2dd83e8
+--- /dev/null
++++ b/test_project_board_server.py
+@@ -0,0 +1,93 @@
++import unittest
++import os
++import tempfile
++import shutil
++from pathlib import Path
++from unittest.mock import patch
++import project_board_server
++
++class TestProjectBoardServerRoot(unittest.TestCase):
++    def setUp(self):
++        self.old_cwd = os.getcwd()
++        self.temp_dir = Path(tempfile.mkdtemp()).resolve()
++        self.old_yaml_path = project_board_server.YAML_PATH
++        self.old_artifacts_dir = project_board_server.ARTIFACTS_DIR
++        self.old_planning_dir = project_board_server.PLANNING_DIR
++        self.old_project_root = project_board_server.PROJECT_ROOT
++        
++    def tearDown(self):
++        os.chdir(self.old_cwd)
++        shutil.rmtree(self.temp_dir)
++        project_board_server.YAML_PATH = self.old_yaml_path
++        project_board_server.ARTIFACTS_DIR = self.old_artifacts_dir
++        project_board_server.PLANNING_DIR = self.old_planning_dir
++        project_board_server.PROJECT_ROOT = self.old_project_root
++
++    def test_find_project_root_from_script_ancestry(self):
++        # Create mock structure:
++        # temp_dir/
++        #   .agents/  (marker dir)
++        #   nested1/
++        #     nested2/
++        (self.temp_dir / ".agents").mkdir()
++        nested_dir = self.temp_dir / "nested1" / "nested2"
++        nested_dir.mkdir(parents=True)
++        
++        # Patch __file__ of the server module to nested_dir / "project_board_server.py"
++        mock_file = str(nested_dir / "project_board_server.py")
++        with patch('project_board_server.__file__', mock_file):
++            resolved = project_board_server.find_project_root()
++            self.assertEqual(resolved.resolve(), self.temp_dir.resolve())
++
++    def test_find_project_root_from_cwd_ancestry(self):
++        # Create mock structure:
++        # temp_dir/
++        #   _bmad-output/  (marker dir)
++        #   nested1/
++        (self.temp_dir / "_bmad-output").mkdir()
++        nested_dir = self.temp_dir / "nested1"
++        nested_dir.mkdir(parents=True)
++        
++        # Patch __file__ to a fake path that doesn't exist and has no markers
++        # so that script_dir walk-up returns None
++        mock_file = "/nonexistent/path/project_board_server.py"
++        with patch('project_board_server.__file__', mock_file):
++            os.chdir(nested_dir)
++            resolved = project_board_server.find_project_root()
++            self.assertEqual(resolved.resolve(), self.temp_dir.resolve())
++
++    def test_find_project_root_fallback_cwd(self):
++        # No markers exist anywhere
++        mock_file = "/nonexistent/path/project_board_server.py"
++        with patch('project_board_server.__file__', mock_file):
++            os.chdir(self.temp_dir)
++            resolved = project_board_server.find_project_root()
++            self.assertEqual(resolved.resolve(), self.temp_dir.resolve())
++
++    @patch('sys.argv', ['project_board_server.py', '--project-root', '/some/custom/path', '--port', '9999'])
++    @patch('project_board_server.HTTPServer')
++    def test_main_cli_override(self, mock_http_server):
++        mock_server_instance = mock_http_server.return_value
++        mock_server_instance.serve_forever.side_effect = KeyboardInterrupt()
++        
++        project_board_server.main()
++        
++        self.assertEqual(project_board_server.PROJECT_ROOT, Path('/some/custom/path').resolve())
++        self.assertEqual(project_board_server.YAML_PATH, Path('/some/custom/path').resolve() / "_bmad-output" / "implementation-artifacts" / "sprint-status.yaml")
++        mock_http_server.assert_called_once_with(("localhost", 9999), project_board_server.ProjectBoardRequestHandler)
++
++    @patch('sys.argv', ['project_board_server.py', '--port', '8012'])
++    @patch('project_board_server.HTTPServer')
++    @patch('project_board_server.find_project_root')
++    def test_main_cli_default(self, mock_find_project_root, mock_http_server):
++        mock_find_project_root.return_value = Path('/mocked/default/root')
++        mock_server_instance = mock_http_server.return_value
++        mock_server_instance.serve_forever.side_effect = KeyboardInterrupt()
++        
++        project_board_server.main()
++        
++        self.assertEqual(project_board_server.PROJECT_ROOT, Path('/mocked/default/root'))
++        mock_http_server.assert_called_once_with(("localhost", 8012), project_board_server.ProjectBoardRequestHandler)
++
++if __name__ == "__main__":
++    unittest.main()

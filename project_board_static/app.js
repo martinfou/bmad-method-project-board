@@ -33,6 +33,7 @@ async function loadBoardData() {
         updateHUD();
         renderEpics();
         renderBoard();
+        checkEmptyState();
         
         if (selectedStoryId) {
             renderTaskInspector(selectedStoryId);
@@ -64,6 +65,82 @@ function updateHUD() {
     const meta = boardData.metadata;
     document.getElementById('project-meta').textContent = 
         `Project: ${meta.project || 'trading-bridge'} | Key: ${meta.project_key || 'NOKEY'} | Updated: ${meta.last_updated || '--'}`;
+        
+    // Update document title with the project name
+    if (meta.project) {
+        document.title = meta.project;
+    } else {
+        document.title = 'BMad Project Board';
+    }
+        
+    // Update Sprint HUD
+    const sprintHud = document.getElementById('sprint-hud');
+    const sprintNameSpan = document.getElementById('sprint-name');
+    const sprintGoalDiv = document.getElementById('sprint-goal');
+    const sprintTimeframeSpan = document.getElementById('sprint-timeframe');
+    const daysLeftBadge = document.getElementById('sprint-days-left');
+
+    if (sprintHud) {
+        if (meta.sprint_name || meta.sprint_goal || meta.end_date) {
+            sprintHud.classList.remove('hidden');
+            sprintNameSpan.textContent = meta.sprint_name || 'Active Sprint';
+            sprintGoalDiv.textContent = meta.sprint_goal || 'No sprint goal set.';
+            sprintGoalDiv.setAttribute('title', meta.sprint_goal || 'No sprint goal set.');
+            
+            if (meta.start_date && meta.end_date) {
+                sprintTimeframeSpan.textContent = `(${meta.start_date} to ${meta.end_date})`;
+            } else {
+                sprintTimeframeSpan.textContent = '';
+            }
+            
+            if (meta.end_date) {
+                // Parse date split to avoid local-vs-UTC timezone shifts
+                const parts = String(meta.end_date).split('-');
+                let parsedEndDate = null;
+                if (parts.length === 3) {
+                    let y = parseInt(parts[0], 10);
+                    let m = parseInt(parts[1], 10) - 1; // Month is 0-indexed
+                    let d = parseInt(parts[2], 10);
+                    if (!isNaN(y) && !isNaN(m) && !isNaN(d) && m >= 0 && m <= 11 && d >= 1 && d <= 31) {
+                        parsedEndDate = new Date(y, m, d);
+                    } else {
+                        parsedEndDate = new Date(meta.end_date);
+                    }
+                } else {
+                    parsedEndDate = new Date(meta.end_date);
+                }
+                
+                if (parsedEndDate && !isNaN(parsedEndDate.getTime())) {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    parsedEndDate.setHours(0, 0, 0, 0);
+                    
+                    const diffTime = parsedEndDate.getTime() - today.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    if (diffDays > 0) {
+                        daysLeftBadge.textContent = `${diffDays}d left`;
+                        daysLeftBadge.className = "text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded-full font-medium";
+                        daysLeftBadge.classList.remove('hidden');
+                    } else if (diffDays === 0) {
+                        daysLeftBadge.textContent = "Ends today";
+                        daysLeftBadge.className = "text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-full font-medium animate-pulse";
+                        daysLeftBadge.classList.remove('hidden');
+                    } else {
+                        daysLeftBadge.textContent = `${Math.abs(diffDays)}d overdue`;
+                        daysLeftBadge.className = "text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded-full font-medium";
+                        daysLeftBadge.classList.remove('hidden');
+                    }
+                } else {
+                    daysLeftBadge.classList.add('hidden');
+                }
+            } else {
+                daysLeftBadge.classList.add('hidden');
+            }
+        } else {
+            sprintHud.classList.add('hidden');
+        }
+    }
         
     // Update active story badge in HUD
     const activeBadge = document.getElementById('active-story-badge');
@@ -270,6 +347,42 @@ function renderBoard() {
     updateColumnCounts();
 }
 
+function checkEmptyState() {
+    const kanbanSection = document.getElementById('kanban-section');
+    const emptyStateContainer = document.getElementById('empty-state-container');
+    const epicPane = document.getElementById('epic-pane');
+    
+    if (!boardData) {
+        if (kanbanSection) kanbanSection.classList.add('hidden');
+        if (emptyStateContainer) emptyStateContainer.classList.remove('hidden');
+        if (epicPane) {
+            epicPane.classList.add('hidden');
+            epicPane.classList.remove('flex');
+        }
+        return;
+    }
+
+    const noEpics = (!boardData.epics || boardData.epics.length === 0);
+    const noActiveStories = (!boardData.stories || boardData.stories.filter(s => s.status !== 'done').length === 0);
+    const isEmpty = noEpics && noActiveStories;
+    
+    if (isEmpty) {
+        if (kanbanSection) kanbanSection.classList.add('hidden');
+        if (emptyStateContainer) emptyStateContainer.classList.remove('hidden');
+        if (epicPane) {
+            epicPane.classList.add('hidden');
+            epicPane.classList.remove('flex');
+        }
+    } else {
+        if (kanbanSection) kanbanSection.classList.remove('hidden');
+        if (emptyStateContainer) emptyStateContainer.classList.add('hidden');
+        if (epicPane) {
+            epicPane.classList.remove('hidden');
+            epicPane.classList.add('flex');
+        }
+    }
+}
+
 function drag(ev) {
     ev.dataTransfer.setData("text", ev.target.id);
     ev.target.classList.add('opacity-50');
@@ -351,11 +464,11 @@ function closeTaskPane() {
     renderBoard();
 }
 
-function formatMarkdown(text) {
+function formatMarkdown(text, skipEscape = false) {
     if (!text) return '';
     
-    // HTML escape
-    let escaped = text
+    const strText = String(text);
+    let escaped = skipEscape ? strText : strText
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
@@ -363,9 +476,116 @@ function formatMarkdown(text) {
     let lines = escaped.split('\n');
     let formattedLines = [];
     let inList = false;
+    let inCodeBlock = false;
+    let codeBlockContent = [];
+    let inQuote = false;
+    let quoteContent = [];
+    let alertType = null;
     
-    for (let line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
         let trimmed = line.trim();
+        
+        if (trimmed.startsWith('```')) {
+            if (inCodeBlock) {
+                let codeText = codeBlockContent.join('\n');
+                formattedLines.push(`<pre class="p-4 rounded-lg bg-slate-950/80 border border-white/5 font-mono text-xs text-cyan-400 overflow-x-auto my-3"><code>${codeText}</code></pre>`);
+                inCodeBlock = false;
+                codeBlockContent = [];
+            } else {
+                inCodeBlock = true;
+            }
+            continue;
+        }
+        
+        if (inCodeBlock) {
+            codeBlockContent.push(line);
+            continue;
+        }
+        
+        if (trimmed.startsWith('&gt;')) {
+            let quoteLine = line.replace(/^\s*&gt;\s?/, '');
+            let alertMatch = quoteLine.trim().match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
+            
+            if (alertMatch) {
+                alertType = alertMatch[1].toLowerCase();
+                if (!inQuote) {
+                    inQuote = true;
+                }
+                continue;
+            }
+            
+            if (!inQuote) {
+                inQuote = true;
+            }
+            quoteContent.push(quoteLine);
+            continue;
+        } else {
+            if (inQuote) {
+                let innerHTML = formatMarkdown(quoteContent.join('\n'), true);
+                if (alertType) {
+                    let borderClass = 'border-l-4 border-cyan-500';
+                    let bgClass = 'bg-cyan-500/5';
+                    let titleColor = 'text-cyan-400';
+                    let icon = 'fa-circle-info';
+                    
+                    if (alertType === 'tip') {
+                        borderClass = 'border-l-4 border-emerald-500';
+                        bgClass = 'bg-emerald-500/5';
+                        titleColor = 'text-emerald-400';
+                        icon = 'fa-lightbulb';
+                    } else if (alertType === 'important') {
+                        borderClass = 'border-l-4 border-indigo-500';
+                        bgClass = 'bg-indigo-500/5';
+                        titleColor = 'text-indigo-400';
+                        icon = 'fa-circle-exclamation';
+                    } else if (alertType === 'warning') {
+                        borderClass = 'border-l-4 border-amber-500';
+                        bgClass = 'bg-amber-500/5';
+                        titleColor = 'text-amber-400';
+                        icon = 'fa-triangle-exclamation';
+                    } else if (alertType === 'caution') {
+                        borderClass = 'border-l-4 border-rose-500';
+                        bgClass = 'bg-rose-500/5';
+                        titleColor = 'text-rose-400';
+                        icon = 'fa-circle-radiation';
+                    }
+                    formattedLines.push(`<div class="p-4 my-4 rounded-r-lg ${bgClass} ${borderClass}">
+                        <div class="flex items-center gap-2 font-bold text-xs uppercase tracking-wider ${titleColor} mb-1">
+                            <i class="fa-solid ${icon}"></i> ${alertType}
+                        </div>
+                        <div class="text-slate-300 font-sans text-sm leading-relaxed">${innerHTML}</div>
+                    </div>`);
+                } else {
+                    formattedLines.push(`<blockquote class="p-4 my-4 border-l-4 border-slate-700 bg-slate-900/30 rounded-r-lg text-slate-400 font-sans text-sm italic leading-relaxed">${innerHTML}</blockquote>`);
+                }
+                inQuote = false;
+                quoteContent = [];
+                alertType = null;
+            }
+        }
+        
+        let headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+        if (headingMatch) {
+            let level = headingMatch[1].length;
+            let title = formatInlineMarkdown(headingMatch[2]);
+            if (level === 1) {
+                formattedLines.push(`<h1 class="text-xl font-bold text-white border-b border-white/5 pb-2 mt-6 mb-3">${title}</h1>`);
+            } else if (level === 2) {
+                formattedLines.push(`<h2 class="text-lg font-bold text-slate-200 mt-5 mb-2">${title}</h2>`);
+            } else if (level === 3) {
+                formattedLines.push(`<h3 class="text-md font-semibold text-slate-300 mt-4 mb-2">${title}</h3>`);
+            } else {
+                formattedLines.push(`<h4 class="text-sm font-semibold text-slate-400 mt-3 mb-1">${title}</h4>`);
+            }
+            continue;
+        }
+        
+        if (trimmed === '---' || trimmed === '***') {
+            formattedLines.push('<hr class="border-white/5 my-4"/>');
+            continue;
+        }
+        
         let listMatch = trimmed.match(/^[-*+]\s+(.*)$/);
         if (listMatch) {
             if (!inList) {
@@ -383,22 +603,36 @@ function formatMarkdown(text) {
                 formattedLines.push('<div class="h-2"></div>');
             } else {
                 let content = formatInlineMarkdown(trimmed);
-                formattedLines.push(`<p class="my-1.5 text-slate-300 leading-relaxed">${content}</p>`);
+                formattedLines.push(`<p class="my-1.5 text-slate-300 leading-relaxed font-sans text-sm">${content}</p>`);
             }
         }
     }
+    
     if (inList) {
         formattedLines.push('</ul>');
     }
+    if (inQuote) {
+        let innerHTML = formatMarkdown(quoteContent.join('\n'), true);
+        formattedLines.push(`<blockquote class="p-4 my-4 border-l-4 border-slate-700 bg-slate-900/30 rounded-r-lg text-slate-400 font-sans text-sm italic leading-relaxed">${innerHTML}</blockquote>`);
+    }
+    if (inCodeBlock) {
+        let codeText = codeBlockContent.join('\n');
+        formattedLines.push(`<pre class="p-4 rounded-lg bg-slate-950/80 border border-white/5 font-mono text-xs text-cyan-400 overflow-x-auto my-3"><code>${codeText}</code></pre>`);
+    }
+    
     return formattedLines.join('\n');
 }
 
 function formatInlineMarkdown(text) {
-    // Bold
     text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
-    // Inline code
     text = text.replace(/`(.*?)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-900 font-mono text-xs text-rose-400">$1</code>');
+    text = text.replace(/\[(.*?)\]\((.*?)\)/g, (match, title, url) => {
+        if (url.trim().toLowerCase().startsWith('javascript:')) {
+            return `[${title}](${url})`;
+        }
+        return `<a href="${url}" target="_blank" class="text-cyan-400 hover:underline">${title}</a>`;
+    });
     return text;
 }
 
@@ -933,4 +1167,39 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Auto reload board data every 30 seconds
     setInterval(loadBoardData, 30000);
+});
+
+async function openPrdModal() {
+    const modal = document.getElementById('prd-modal');
+    const titleSpan = document.getElementById('prd-modal-title');
+    const bodyDiv = document.getElementById('prd-modal-body');
+    
+    bodyDiv.innerHTML = '<div class="text-center py-12 text-slate-500"><i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i> Loading PRD content...</div>';
+    titleSpan.textContent = 'Loading...';
+    modal.classList.remove('hidden');
+    
+    try {
+        const response = await fetch(`${API_URL}/api/prd`);
+        if (!response.ok) throw new Error('Failed to fetch PRD');
+        const data = await response.json();
+        
+        titleSpan.textContent = data.filename || 'Product Brief';
+        bodyDiv.innerHTML = formatMarkdown(data.content);
+    } catch (err) {
+        console.error('Error fetching PRD:', err);
+        titleSpan.textContent = 'Error';
+        bodyDiv.innerHTML = '<div class="text-rose-400 font-bold p-4 bg-rose-500/10 rounded-lg border border-rose-500/20">Error loading PRD content from backend. Make sure the server is active.</div>';
+    }
+}
+
+function closePrdModal() {
+    const modal = document.getElementById('prd-modal');
+    modal.classList.add('hidden');
+}
+
+// Add Esc key listener to close PRD modal
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closePrdModal();
+    }
 });

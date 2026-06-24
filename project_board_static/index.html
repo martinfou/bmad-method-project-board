@@ -116,6 +116,17 @@
             </div>
         </div>
 
+        <!-- Sprint HUD (Center) -->
+        <div id="sprint-hud" class="hidden md:flex flex-col max-w-xl mx-4 text-center px-4 py-1.5 rounded-lg bg-slate-900/40 border border-white/5 shadow-inner">
+            <div class="text-xs font-semibold text-slate-300 flex items-center justify-center gap-2">
+                <i class="fa-solid fa-running text-dracula-purple"></i>
+                <span id="sprint-name" class="text-white font-medium">Active Sprint</span>
+                <span id="sprint-timeframe" class="text-[10px] text-slate-400 font-mono"></span>
+                <span id="sprint-days-left" class="hidden text-[10px] px-1.5 py-0.5 rounded-full font-medium border"></span>
+            </div>
+            <div id="sprint-goal" class="text-xs text-slate-400 truncate italic mt-0.5" title="No sprint goal set.">No sprint goal set.</div>
+        </div>
+
         <!-- Overall Progress Ring -->
         <div class="flex items-center gap-6">
             <div class="flex items-center gap-4">
@@ -131,6 +142,9 @@
                     <span id="progress-ring-text" class="absolute text-[10px] font-bold font-mono">0%</span>
                 </div>
             </div>
+            <button onclick="openPrdModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/5 text-slate-300 hover:text-white hover:bg-slate-700 transition flex items-center gap-1.5 text-xs font-medium">
+                <i class="fa-solid fa-file-contract text-cyan-400"></i> PRD
+            </button>
             <button onclick="loadBoardData()" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/5 text-slate-300 hover:text-white hover:bg-slate-700 transition flex items-center gap-1.5 text-xs font-medium">
                 <i class="fa-solid fa-arrows-rotate"></i> Reload
             </button>
@@ -140,6 +154,42 @@
     <!-- Main Tri-Pane Workspace -->
     <main class="flex-1 flex overflow-hidden relative">
         
+        <!-- Empty State Container (Hidden by default) -->
+        <div id="empty-state-container" class="hidden flex-1 flex-col items-center justify-center bg-slate-900/30 p-8 w-full h-full absolute inset-0 z-20 overflow-y-auto">
+            <div class="glass w-full max-w-2xl rounded-2xl p-10 flex flex-col items-center text-center shadow-2xl border border-white/5 relative overflow-hidden my-auto">
+                <div class="absolute inset-0 bg-gradient-to-b from-dracula-purple/5 to-transparent pointer-events-none"></div>
+                <div class="w-16 h-16 rounded-full bg-slate-800/80 flex items-center justify-center shadow-lg border border-white/10 mb-6 text-dracula-purple text-2xl">
+                    <i class="fa-solid fa-rocket"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-white mb-3">Welcome to your Project Board!</h2>
+                <p class="text-slate-400 mb-8 max-w-md">Your workspace is successfully initialized, but it's currently empty. Let's get your first sprint planned.</p>
+                
+                <div class="w-full space-y-3 text-left">
+                    <div class="flex items-start gap-4 p-4 rounded-xl bg-slate-800/40 border border-white/5 hover:border-white/10 transition-colors">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-dracula-purple/20 text-dracula-purple flex items-center justify-center font-bold font-mono text-sm border border-dracula-purple/30">1</div>
+                        <div>
+                            <h3 class="text-slate-200 font-medium mb-1">Create your first Epic</h3>
+                            <p class="text-xs text-slate-500">Ask your agent to create a new epic to track a major feature or goal.</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-4 p-4 rounded-xl bg-slate-800/40 border border-white/5 hover:border-white/10 transition-colors">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-dracula-cyan/20 text-dracula-cyan flex items-center justify-center font-bold font-mono text-sm border border-dracula-cyan/30">2</div>
+                        <div>
+                            <h3 class="text-slate-200 font-medium mb-1">Break it down</h3>
+                            <p class="text-xs text-slate-500">Ask the agent to generate user stories for your epic.</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-4 p-4 rounded-xl bg-slate-800/40 border border-white/5 hover:border-white/10 transition-colors">
+                        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-dracula-green/20 text-dracula-green flex items-center justify-center font-bold font-mono text-sm border border-dracula-green/30">3</div>
+                        <div>
+                            <h3 class="text-slate-200 font-medium mb-1">Start building</h3>
+                            <p class="text-xs text-slate-500">Assign stories to the current sprint and let the agents begin execution!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Left Pane: Epic Roadmap -->
         <aside id="epic-pane" class="w-80 border-r border-white/5 bg-slate-950 flex flex-col transition-all duration-300 relative shrink-0">
             <div class="p-4 border-b border-white/5 flex justify-between items-center bg-slate-900/50">
@@ -160,7 +210,7 @@
         </aside>
         
         <!-- Center Pane: Kanban Board -->
-        <section class="flex-1 flex flex-col bg-slate-900/30 overflow-x-auto min-w-0">
+        <section id="kanban-section" class="flex-1 flex flex-col bg-slate-900/30 overflow-x-auto min-w-0">
             <!-- Kanban Columns Container -->
             <div class="flex-1 p-6 flex gap-4 min-h-0 overflow-x-auto overflow-y-hidden">
                 
@@ -273,6 +323,23 @@
         </aside>
 
     </main>
+
+    <!-- PRD Modal -->
+    <div id="prd-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="glass w-full max-w-4xl h-[85vh] rounded-xl flex flex-col shadow-2xl overflow-hidden border border-white/10">
+            <div class="p-4 border-b border-white/5 flex justify-between items-center bg-slate-900/50">
+                <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                    <i class="fa-solid fa-file-contract text-cyan-400"></i> Project PRD: <span id="prd-modal-title" class="normal-case font-mono text-xs text-slate-400"></span>
+                </h2>
+                <button onclick="closePrdModal()" class="text-slate-400 hover:text-white transition text-sm">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div id="prd-modal-body" class="flex-1 overflow-y-auto p-6 font-sans text-slate-300 leading-relaxed space-y-4">
+                <!-- Content will be dynamically inserted here -->
+            </div>
+        </div>
+    </div>
 
     <!-- Local board frontend logic -->
     <script src="app.js"></script>

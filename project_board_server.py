@@ -12,6 +12,7 @@ PORT = 8010
 YAML_PATH = None
 ARTIFACTS_DIR = None
 PLANNING_DIR = None
+PROJECT_ROOT = None
 STATIC_DIR = Path(__file__).resolve().parent / "project_board_static"
 
 ALLOWED_TRANSITIONS = {
@@ -34,6 +35,137 @@ def write_last_active_story(story_key):
             temp_path.replace(target_path)
         except Exception as e:
             sys.stderr.write(f"Error writing last active story trace: {e}\n")
+
+def find_project_root(override_path=None):
+    if override_path:
+        p = Path(override_path).resolve()
+        if not p.exists():
+            sys.stderr.write(f"Error: Specified project root '{p}' does not exist.\n")
+            sys.exit(1)
+        if not p.is_dir():
+            sys.stderr.write(f"Error: Specified project root '{p}' is not a directory.\n")
+            sys.exit(1)
+        return p
+
+    # 1. Start check from directory of project_board_server.py
+    script_dir = Path(__file__).resolve().parent
+    try:
+        cwd = Path(os.getcwd()).resolve()
+    except Exception:
+        cwd = script_dir
+    
+    # Helper to check if a directory has any of the markers with correct type checks
+    def has_marker(p):
+        try:
+            if (p / ".agents").is_dir():
+                return True
+            if (p / "_bmad-output").is_dir():
+                return True
+            if (p / "project-context.md").is_file():
+                return True
+        except PermissionError:
+            pass
+        return False
+        
+    # Helper to walk up from a path
+    def walk_up_find(start_path):
+        curr = start_path
+        while True:
+            if has_marker(curr):
+                return curr
+            parent = curr.parent
+            if parent == curr: # Reached filesystem root
+                break
+            curr = parent
+        return None
+
+    # Check from script dir first
+    root = walk_up_find(script_dir)
+    if root:
+        return root
+        
+    # Check from CWD next
+    if cwd != script_dir:
+        root = walk_up_find(cwd)
+        if root:
+            return root
+        
+    # Fallback to CWD
+    return cwd
+
+def load_project_config(project_root):
+    config_paths = [
+        project_root / "_bmad" / "bmm" / "config.yaml",
+        project_root / ".bmad" / "config.yaml"
+    ]
+    
+    config = {}
+    for path in config_paths:
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if ":" in line:
+                            key, val = line.split(":", 1)
+                            config[key.strip()] = val.strip().strip('"').strip("'")
+                break
+            except Exception as e:
+                sys.stderr.write(f"Error reading config {path}: {e}\n")
+    return config
+
+def get_prd_content():
+    global PLANNING_DIR, PROJECT_ROOT
+    if not PROJECT_ROOT:
+        return "PRD Not Configured", "Project root not resolved."
+        
+    # Standard check directories
+    possible_paths = []
+    if PLANNING_DIR:
+        possible_paths.extend([
+            PLANNING_DIR / "prd.md",
+            PLANNING_DIR / "product-brief.md",
+        ])
+    possible_paths.append(PROJECT_ROOT / "design-artifacts" / "A-Product-Brief" / "project-brief.md")
+    
+    for path in possible_paths:
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return path.name, f.read()
+            except Exception as e:
+                sys.stderr.write(f"Error reading PRD path {path}: {e}\n")
+                
+    # Fallback to wildcard search in planning artifacts
+    if PLANNING_DIR and PLANNING_DIR.exists():
+        try:
+            for p in sorted(PLANNING_DIR.glob("*prd*.md")):
+                with open(p, "r", encoding="utf-8") as f:
+                    return p.name, f.read()
+            for p in sorted(PLANNING_DIR.glob("*brief*.md")):
+                with open(p, "r", encoding="utf-8") as f:
+                    return p.name, f.read()
+        except PermissionError:
+            pass
+        except Exception as e:
+            sys.stderr.write(f"Error searching PRD files: {e}\n")
+            
+    # Fallback to wildcard search in design-artifacts/A-Product-Brief
+    brief_dir = PROJECT_ROOT / "design-artifacts" / "A-Product-Brief"
+    if brief_dir.exists():
+        try:
+            for p in sorted(brief_dir.glob("*.md")):
+                if "brief" in p.name.lower() or "prd" in p.name.lower():
+                    with open(p, "r", encoding="utf-8") as f:
+                        return p.name, f.read()
+        except PermissionError:
+            pass
+        except Exception as e:
+            sys.stderr.write(f"Error searching design brief files: {e}\n")
+        
+    return "PRD Not Found", "No PRD (`prd.md`) or Product Brief (`project-brief.md`) was found in the planning or design directories."
 
 def normalize_to_tokens(text):
     if not text:
@@ -457,7 +589,11 @@ class ProjectBoardRequestHandler(BaseHTTPRequestHandler):
         
         # API Endpoints
         if path == "/api/board":
-            metadata, dev_status = parse_sprint_status()
+            try:
+                metadata, dev_status = parse_sprint_status()
+            except Exception as e:
+                sys.stderr.write(f"Error parsing sprint status: {e}\n")
+                metadata, dev_status = {}, {}
             
             epics = {}
             stories = []
@@ -544,6 +680,14 @@ class ProjectBoardRequestHandler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
             self.send_json({"active_story_key": active_key})
+            return
+
+        elif path == "/api/prd":
+            filename, content = get_prd_content()
+            self.send_json({
+                "filename": filename,
+                "content": content
+            })
             return
             
         # Serve Static Files
@@ -643,22 +787,97 @@ class ProjectBoardRequestHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+def seed_templates():
+    if not YAML_PATH.exists():
+        try:
+            ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+            import datetime
+            now = datetime.datetime.now()
+            end_date = now + datetime.timedelta(days=14)
+            with open(YAML_PATH, "w", encoding="utf-8") as f:
+                f.write(f"""project: "My BMAD Project"
+project_key: "BMAD"
+sprint_name: "Sprint 1: Foundation"
+sprint_goal: "Set up the core architecture and basic authentication"
+start_date: "{now.strftime('%Y-%m-%d')}"
+end_date: "{end_date.strftime('%Y-%m-%d')}"
+last_updated: "{now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+
+development_status:
+  epic-1: in-progress
+  epic-2: backlog
+  
+  1-1: done
+  1-2: in-progress
+  1-3: ready-for-dev
+  
+  2-1: backlog
+""")
+            print("Seeded sprint-status.yaml template.")
+        except Exception as e:
+            sys.stderr.write(f"Error seeding sprint-status.yaml: {e}\n")
+            
+    epics_path = PLANNING_DIR / "epics.md"
+    if not epics_path.exists():
+        try:
+            PLANNING_DIR.mkdir(parents=True, exist_ok=True)
+            with open(epics_path, "w", encoding="utf-8") as f:
+                f.write("""# Project Epics
+
+## Epic 1: Scaffold Initial Architecture
+Set up the core boilerplate, file structure, and CI pipelines for the project.
+
+## Epic 2: Core User Authentication
+Implement login, registration, and password recovery.
+""")
+            print("Seeded epics.md template.")
+        except Exception as e:
+            sys.stderr.write(f"Error seeding epics.md: {e}\n")
+
 def main():
-    global YAML_PATH, ARTIFACTS_DIR, PLANNING_DIR
+    global YAML_PATH, ARTIFACTS_DIR, PLANNING_DIR, PROJECT_ROOT
     import argparse
     
     parser = argparse.ArgumentParser(description="BMAD Method Project Board Server")
-    parser.add_argument("--project-root", default=os.getcwd(), help="Path to project workspace root")
+    parser.add_argument("--project-root", default=None, help="Path to project workspace root")
     parser.add_argument("--port", type=int, default=PORT, help="Port to run server on")
     args = parser.parse_args()
     
-    project_root = Path(args.project_root).resolve()
-    YAML_PATH = project_root / "_bmad-output" / "implementation-artifacts" / "sprint-status.yaml"
-    ARTIFACTS_DIR = project_root / "_bmad-output" / "implementation-artifacts"
-    PLANNING_DIR = project_root / "_bmad-output" / "planning-artifacts"
+    if not (0 <= args.port <= 65535):
+        parser.error("Port must be between 0 and 65535")
+        
+    project_root = find_project_root(args.project_root)
+        
+    PROJECT_ROOT = project_root
     
-    server = HTTPServer(("localhost", args.port), ProjectBoardRequestHandler)
-    print(f"BMAD Method Project Board server running on http://localhost:{args.port} (Workspace: {project_root})")
+    config = load_project_config(project_root)
+    impl_dir = config.get("implementation_artifacts_dir") or config.get("story_location") or "_bmad-output/implementation-artifacts"
+    plan_dir = config.get("planning_artifacts_dir") or "_bmad-output/planning-artifacts"
+    
+    ARTIFACTS_DIR = project_root / impl_dir
+    PLANNING_DIR = project_root / plan_dir
+    YAML_PATH = ARTIFACTS_DIR / "sprint-status.yaml"
+    
+    seed_templates()
+    
+    port = args.port
+    server = None
+    while port < 65535:
+        try:
+            server = HTTPServer(("localhost", port), ProjectBoardRequestHandler)
+            break
+        except OSError as e:
+            # Catch "Address already in use" (98 on Linux, 48 on macOS) or Permission Error (13)
+            if e.errno in (98, 48, 13):
+                port += 1
+            else:
+                raise
+                
+    if not server:
+        sys.stderr.write("Could not bind to any port.\n")
+        sys.exit(1)
+        
+    print(f"BMAD Method Project Board server running on http://localhost:{port} (Workspace: {project_root})")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
