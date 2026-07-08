@@ -8,3 +8,6 @@ __pycache__/
 # Personal config overrides
 *.user.toml
 
+# Auto-généré par cron generate-agents-md.py
+AGENTS.md
+
